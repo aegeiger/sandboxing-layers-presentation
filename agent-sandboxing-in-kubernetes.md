@@ -76,21 +76,49 @@ graph TB
 ```mermaid
 graph LR
     A[AI Agent] -->|1| B[OpenShell Policy<br/>Filesystem · Network · Process · Inference]
-    B -->|2| C[Agent-Sandbox CRD<br/>Lifecycle · Identity · Storage · Warm Pools]
+    B -->|2| C[Agent-Sandbox CRD<br/>No defense — orchestration only]
     C -->|3| D[Kata Containers<br/>Dedicated VM · Guest Kernel · HW Isolation]
     D -->|4| E[Kubernetes Node<br/>Host Kernel]
 
     style A fill:#e94560,color:#fff
     style B fill:#0f3460,color:#fff
-    style C fill:#16213e,color:#fff
+    style C fill:#16213e,color:#fff,stroke:#f5a623,stroke-width:2px,stroke-dasharray:5 5
     style D fill:#533483,color:#fff
     style E fill:#1a1a2e,color:#fff
 ```
 
 </details>
 
-| Layer | Scope | Isolation Mechanism |
-|---|---|---|
-| **OpenShell** | Application | YAML policies enforcing L7 network rules, filesystem ACLs, process restrictions, and inference routing |
-| **Agent-Sandbox** | Orchestration | Kubernetes CRD managing pod lifecycle, stable identity, persistent storage, hibernation, and warm pools |
-| **Kata Containers** | Runtime | Hardware-virtualized micro-VM with dedicated kernel, providing memory, I/O, and network isolation via VT-x/AMD-V |
+| Layer | Scope | Defense? | Mechanism |
+|---|---|---|---|
+| **OpenShell** | Application | Yes | YAML policies enforcing L7 network rules, filesystem ACLs, process restrictions, and inference routing |
+| **Agent-Sandbox** | Orchestration | **No** | Provides no isolation or security enforcement of its own. It manages pod lifecycle and delegates all defense to the runtime (Kata/gVisor) and policy layer (OpenShell) |
+| **Kata Containers** | Runtime | Yes | Hardware-virtualized micro-VM with dedicated kernel, providing memory, I/O, and network isolation via VT-x/AMD-V |
+
+---
+
+## Beyond Defense: Other Major Features
+
+### OpenShell
+
+OpenShell is primarily a defense layer. Its core value proposition -- policy-enforced filesystem, network, process, and inference controls -- is entirely security-focused. The privacy router (stripping caller credentials, injecting backend credentials for inference) is also a security feature. There are no major non-defense features to call out separately.
+
+### Agent-Sandbox
+
+While Agent-Sandbox provides no security isolation on its own, it is the orchestration backbone for agent workloads:
+
+- **Warm Pools (`SandboxWarmPool`)** -- Pre-provisions a pool of ready-to-go sandboxes so that new agent sessions can be claimed instantly instead of waiting for pod scheduling, image pull, and container startup. Critical for latency-sensitive agent deployments at scale.
+- **Hibernation & Pause** -- Sandboxes can be suspended to persistent storage and resumed later, freeing cluster resources without losing agent state.
+- **Stable Identity & Persistent Storage** -- Each sandbox gets a stable hostname and optional PVC-backed storage that survives restarts, giving agents a durable workspace.
+- **Templated Creation (`SandboxTemplate`, `SandboxClaim`)** -- Standardizes sandbox configuration across teams and enables self-service provisioning through claims against warm pools.
+- **Lifecycle Management** -- Scheduled deletion, automatic cleanup, and pause/resume give operators control over sandbox sprawl.
+
+### Kata Containers
+
+Beyond VM-level isolation, Kata provides capabilities that standard container runtimes cannot:
+
+- **Peer Pods** -- Via the Cloud API Adaptor, Kata can spawn its micro-VMs as actual cloud provider instances (AWS, Azure, GCP, IBM Cloud) rather than local VMs on the worker node. This eliminates the need for bare-metal nodes or nested virtualization, and enables confidential computing (SEV, TDX) on cloud VMs.
+- **VFIO Device Passthrough** -- Because Kata runs a real VM, it can pass through PCI devices (GPUs, FPGAs, SmartNICs) directly to the guest via VFIO, giving the agent near-native hardware access. Standard containers share the host kernel and cannot achieve the same level of direct device assignment.
+- **Multiple Hypervisor Backends** -- Choose between QEMU (full-featured), Cloud-Hypervisor (optimized for cloud workloads), or Firecracker (minimal, fast boot) depending on the tradeoff between feature set and startup latency.
+- **Confidential Containers** -- Integration with the confidential-containers project enables hardware-attested TEEs (Trusted Execution Environments), ensuring that neither the cloud provider nor the host operator can inspect the agent's memory or code.
+- **VSOCKs** -- Direct VM-to-host communication via virtio-vsock, eliminating per-pod proxy overhead and saving ~4.5 MB of RAM per pod in high-density deployments.

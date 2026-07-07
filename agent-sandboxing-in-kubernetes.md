@@ -16,51 +16,52 @@ Kata Containers is an open-source container runtime that provides VM-level isola
 
 ## How Each Layer Sandboxes an Agent
 
-![Architecture: How each layer sandboxes an agent](architecture.png)
+![Sandbox Layers Overview](sandbox-layers-overview.png)
 
 <details>
 <summary>Mermaid source</summary>
 
 ```mermaid
 graph TB
-    subgraph Host["Kubernetes Node"]
+    User{User}
 
-        subgraph AgentSandbox["Agent-Sandbox CRD Layer"]
-            SB[Sandbox CR]
-            CTRL[Sandbox Controller]
-            SB -->|managed by| CTRL
-            CTRL -->|creates & manages| POD[Sandbox Pod]
+    subgraph Kubelet["Kubelet"]
+        subgraph KataMicroVM["Kata MicroVM"]
+            subgraph Sandbox["Sandbox"]
+                Agent[Agent]
+                Executor[OpenShell Executor]
+                Executor -->|Executes| Agent
+                Agent <-->|I/O| Executor
+            end
         end
-
-        subgraph OpenShell["OpenShell Runtime Layer"]
-            GW[Gateway<br/>Control Plane]
-            PE[Policy Engine]
-            PR[Privacy Router]
-            GW -->|launches| CONTAINER[Agent Container]
-            CONTAINER -->|all egress| PE
-            PE -->|allowed| EXTERNAL[External APIs]
-            PE -->|inference| PR
-            PR -->|stripped creds| MODEL[Model Backend]
-            PE -->|denied| BLOCKED[Blocked & Logged]
-        end
-
-        subgraph Kata["Kata Containers Isolation Layer"]
-            VMM[Hypervisor<br/>QEMU / Cloud-Hypervisor / Firecracker]
-            GUEST[Lightweight VM]
-            KERNEL[Dedicated Guest Kernel]
-            VMM -->|creates| GUEST
-            GUEST -->|runs| KERNEL
-            KERNEL -->|runs| AGENT[Agent Process]
-        end
-
-        POD -->|runtime class| VMM
-        CONTAINER -.->|runs inside| GUEST
     end
 
-    style Host fill:#1a1a2e,color:#fff
-    style AgentSandbox fill:#16213e,color:#fff
-    style OpenShell fill:#0f3460,color:#fff
-    style Kata fill:#533483,color:#fff
+    subgraph Infra["Cluster Services"]
+        Router[Sandbox Router]
+        GIE["GIE\n(Kubernetes API\nGateway Extension)"]
+        vLLM1[vLLM / llm-d / etc.]
+        vLLM2[vLLM / llm-d / etc.]
+        vLLM3[vLLM / llm-d / etc.]
+    end
+
+    User <--> Router
+    User <--> GIE
+    Router <--> Executor
+    Router <--> GIE
+    GIE <--> vLLM1
+
+    style User fill:#e94560,color:#fff,stroke:#e94560
+    style Kubelet fill:#1a1a2e,color:#fff
+    style KataMicroVM fill:#16213e,color:#fff
+    style Sandbox fill:#2f9e44,color:#fff,stroke:#2f9e44,stroke-dasharray:5 5
+    style Agent fill:#0f3460,color:#fff
+    style Executor fill:#0f3460,color:#fff
+    style Infra fill:#1a1a2e,color:#fff
+    style Router fill:#16213e,color:#fff
+    style GIE fill:#16213e,color:#fff
+    style vLLM1 fill:#533483,color:#fff
+    style vLLM2 fill:#533483,color:#fff
+    style vLLM3 fill:#533483,color:#fff
 ```
 
 </details>
